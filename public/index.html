@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notes App</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; }
+    .container { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+    h1 { text-align: center; margin-bottom: 24px; font-size: 28px; }
+
+    .form-card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .form-card input, .form-card textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; outline: none; transition: border-color 0.2s; }
+    .form-card input:focus, .form-card textarea:focus { border-color: #4f46e5; }
+    .form-card textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+    .form-card button { background: #4f46e5; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 500; }
+    .form-card button:hover { background: #4338ca; }
+    .form-card button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .form-card .cancel-btn { background: #6b7280; margin-left: 8px; }
+    .form-card .cancel-btn:hover { background: #4b5563; }
+
+    .note-card { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .note-card h3 { font-size: 16px; margin-bottom: 4px; }
+    .note-card p { font-size: 14px; color: #6b7280; line-height: 1.5; }
+    .note-card .meta { font-size: 12px; color: #9ca3af; margin-top: 6px; }
+    .note-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .note-actions button { border: none; background: none; cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 4px; }
+    .edit-btn { color: #4f46e5; }
+    .edit-btn:hover { background: #eef2ff; }
+    .delete-btn { color: #ef4444; }
+    .delete-btn:hover { background: #fef2f2; }
+
+    .empty { text-align: center; color: #9ca3af; padding: 40px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Notes</h1>
+
+    <div class="form-card">
+      <h2 id="form-title" style="font-size:18px;margin-bottom:12px;">New Note</h2>
+      <input type="text" id="title" placeholder="Title" />
+      <textarea id="content" placeholder="Content"></textarea>
+      <div>
+        <button id="save-btn" onclick="saveNote()">Save</button>
+        <button class="cancel-btn" id="cancel-btn" onclick="cancelEdit()" style="display:none;">Cancel</button>
+      </div>
+    </div>
+
+    <div id="notes-list"></div>
+  </div>
+
+  <script>
+    let editingId = null;
+
+    async function fetchNotes() {
+      const res = await fetch("/notes");
+      const notes = await res.json();
+      renderNotes(notes);
+    }
+
+    function renderNotes(notes) {
+      const list = document.getElementById("notes-list");
+      if (notes.length === 0) {
+        list.innerHTML = '<div class="empty">No notes yet. Create one above.</div>';
+        return;
+      }
+      list.innerHTML = notes.map(n => `
+        <div class="note-card">
+          <div>
+            <h3>${escapeHtml(n.title)}</h3>
+            <p>${escapeHtml(n.content)}</p>
+            <div class="meta">${new Date(n.createdAt).toLocaleString()}</div>
+          </div>
+          <div class="note-actions">
+            <button class="edit-btn" onclick="startEdit('${n.id}')">Edit</button>
+            <button class="delete-btn" onclick="deleteNote('${n.id}')">Delete</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function saveNote() {
+      const title = document.getElementById("title").value.trim();
+      const content = document.getElementById("content").value.trim();
+      if (!title || !content) return alert("Title and content are required.");
+
+      const btn = document.getElementById("save-btn");
+      btn.disabled = true;
+
+      if (editingId) {
+        await fetch(`/note/${editingId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, content })
+        });
+        cancelEdit();
+      } else {
+        await fetch("/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, content })
+        });
+      }
+
+      document.getElementById("title").value = "";
+      document.getElementById("content").value = "";
+      btn.disabled = false;
+      fetchNotes();
+    }
+
+    function startEdit(id) {
+      fetch(`/note/${id}`)
+        .then(res => res.json())
+        .then(note => {
+          editingId = id;
+          document.getElementById("form-title").textContent = "Edit Note";
+          document.getElementById("title").value = note.title;
+          document.getElementById("content").value = note.content;
+          document.getElementById("save-btn").textContent = "Update";
+          document.getElementById("cancel-btn").style.display = "inline-block";
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+    }
+
+    function cancelEdit() {
+      editingId = null;
+      document.getElementById("form-title").textContent = "New Note";
+      document.getElementById("title").value = "";
+      document.getElementById("content").value = "";
+      document.getElementById("save-btn").textContent = "Save";
+      document.getElementById("cancel-btn").style.display = "none";
+    }
+
+    async function deleteNote(id) {
+      if (!confirm("Delete this note?")) return;
+      await fetch(`/note/${id}`, { method: "DELETE" });
+      fetchNotes();
+    }
+
+    fetchNotes();
+  </script>
+</body>
+</html>
